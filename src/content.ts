@@ -82,11 +82,23 @@ function createDislikeIcon(active = false): string {
   return `
     <svg viewBox="0 0 24 24" ${strokeAttrs} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9"/>
-      <path d="M8.5 10.25c.75 1.25 1.75 1.25 2.5 0"/>
-      <path d="M13 10.25c.75 1.25 1.75 1.25 2.5 0"/>
-      <line x1="9.5" y1="15" x2="14.5" y2="15"/>
+      <path d="M8 15h8"/>
+      <path d="M8 9h2"/>
+      <path d="M14 9h2"/>
     </svg>
   `;
+}
+
+const LIKE_TARGET_SELECTOR = ".author-wrapper .like-wrapper, .author-wrapper .like-active";
+
+function shouldInjectDislikeButton(likeWrapper: Element): boolean {
+  const authorWrapper = likeWrapper.closest(".author-wrapper");
+  if (!authorWrapper) return false;
+
+  const card = authorWrapper.closest("section.note-item");
+  if (!card || card.classList.contains("query-note-item")) return false;
+
+  return true;
 }
 
 function createDislikeButton(): HTMLButtonElement {
@@ -139,6 +151,7 @@ function requestDislike(noteId: string, btn: HTMLButtonElement, card: HTMLElemen
 
 function injectButton(likeWrapper: Element): void {
   if (likeWrapper.getAttribute(INJECTED_ATTR) === "true") return;
+  if (!shouldInjectDislikeButton(likeWrapper)) return;
 
   const parent = likeWrapper.parentElement;
   if (!parent) return;
@@ -174,7 +187,7 @@ function injectButton(likeWrapper: Element): void {
 }
 
 function scan(root: ParentNode = document): void {
-  root.querySelectorAll(".like-wrapper").forEach((el) => {
+  root.querySelectorAll(LIKE_TARGET_SELECTOR).forEach((el) => {
     if (el.getAttribute(INJECTED_ATTR) !== "true") {
       injectButton(el);
     }
@@ -225,7 +238,10 @@ function init(): void {
     for (const mutation of mutations) {
       mutation.addedNodes.forEach((node) => {
         if (!(node instanceof HTMLElement)) return;
-        if (node.matches?.(".like-wrapper")) {
+        if (
+          node.matches?.(".like-wrapper, .like-active") &&
+          shouldInjectDislikeButton(node)
+        ) {
           injectButton(node);
         } else {
           scan(node);
