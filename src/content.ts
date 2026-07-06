@@ -6,9 +6,47 @@ import {
 
 const NOTE_ID_RE = /\/explore\/([0-9a-f]{24})/i;
 const INJECTED_ATTR = "data-xhs-dislike-injected";
-const pending = new Map<string, { btn: HTMLButtonElement; card: HTMLElement }>();
+const STORAGE_KEY = "xhs-dislike-ids";
+const pending = new Map<
+  string,
+  { btn: HTMLButtonElement; card: HTMLElement; noteId: string }
+>();
 let injectedScriptLoaded = false;
 let signReady = false;
+
+function loadDislikedIds(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return new Set();
+    const ids = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(ids) ? ids : []);
+  } catch {
+    return new Set();
+  }
+}
+
+const dislikedIds = loadDislikedIds();
+
+function saveDislikedId(noteId: string): void {
+  dislikedIds.add(noteId);
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...dislikedIds]));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function isDisliked(noteId: string): boolean {
+  return dislikedIds.has(noteId);
+}
+
+function getCardFromLikeWrapper(likeWrapper: Element): HTMLElement | null {
+  const card =
+    likeWrapper.closest("section.note-item") ??
+    likeWrapper.closest('section:has(a[href*="/explore/"])') ??
+    likeWrapper.closest("section");
+  return card instanceof HTMLElement ? card : null;
+}
 
 function injectPageScript(): void {
   if (injectedScriptLoaded) return;
@@ -83,7 +121,7 @@ function requestDislike(noteId: string, btn: HTMLButtonElement, card: HTMLElemen
   }
 
   const requestId = crypto.randomUUID();
-  pending.set(requestId, { btn, card });
+  pending.set(requestId, { btn, card, noteId });
 
   btn.disabled = true;
   btn.classList.add("is-loading");
@@ -118,11 +156,8 @@ function injectButton(likeWrapper: Element): void {
     btn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const card =
-        likeWrapper.closest("section.note-item") ??
-        likeWrapper.closest('section:has(a[href*="/explore/"])') ??
-        likeWrapper.closest("section");
-      if (!card || !(card instanceof HTMLElement)) return;
+      const card = getCardFromLikeWrapper(likeWrapper);
+      if (!card) return;
       requestDislike(noteId, btn, card);
     });
   }
@@ -130,6 +165,12 @@ function injectButton(likeWrapper: Element): void {
   parent.insertBefore(spacer, likeWrapper);
   parent.insertBefore(btn, likeWrapper);
   likeWrapper.setAttribute(INJECTED_ATTR, "true");
+
+  if (noteId && isDisliked(noteId)) {
+    const card = getCardFromLikeWrapper(likeWrapper);
+    if (card) dimCard(card);
+    markDislikeSuccess(btn);
+  }
 }
 
 function scan(root: ParentNode = document): void {
@@ -162,6 +203,7 @@ function handleMessage(event: MessageEvent): void {
   const { btn, card } = entry;
 
   if (data.ok) {
+    saveDislikedId(data.noteId);
     markDislikeSuccess(btn);
     dimCard(card);
     return;
